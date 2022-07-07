@@ -1,0 +1,2 @@
+##### Detect failed workflows ####
+(protoPayload.resourceName="projects/prj-sa-cegad-sandbox-atenea/locations/europe-west1/workflows/wkf-api-request-test" resource.type="audited_resource" resource.labels.service=("workflowexecutions.googleapis.com" OR "workflows.googleapis.com")) OR (resource.type="workflows.googleapis.com/Workflow" resource.labels.workflow_id="wkf-api-request-test" resource.labels.location="europe-west1") severity>=DEFAULT

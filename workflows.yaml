@@ -1,0 +1,244 @@
+######## Launch some Cloud Runs ########
+main:
+  # params: [inputData]
+  steps:
+    - serviceNameFunction1:
+      call: http.get
+      args:
+          url: https://service-name-<random-hash>.run.app
+          auth:
+              type: OIDC
+      # result: serviceNameResult
+      next: serviceNameFunction2 # Why do i have to execute this line
+    - serviceNameFunction2:
+      call: http.get
+      args:
+          url: https://service-name-<random-hash>.run.app
+          auth:
+              type: OIDC
+      # result: serviceNameResult
+      next: serviceNameFunctionX # Why do i have to execute this line
+
+######## Catch errors ########
+
+- read_item:
+    try:
+      call: http.get
+      args:
+        url: https://example.com/someapi
+        auth:
+          type: OIDC
+      result: API_response
+    except:
+      as: e
+      steps:
+        - known_errors:
+            switch:
+              - condition: ${not("HttpError" in e.tags)}
+                next: connection_problem
+              - condition: ${e.code == 404}
+                next: url_not_found
+              - condition: ${e.code == 403}
+                next: auth_problem
+        - unhandled_exception:
+            raise: ${e}
+- url_found:
+    return: ${API_response.body}
+- connection_problem:
+    return: "Connection problem; check URL"
+- url_not_found:
+    return: "Sorry, URL wasn't found"
+- auth_problem:
+    return: "Authentication error"
+
+######## Access to a Secret via API REST ######
+
+main:
+  steps:
+    - init:
+        assign:
+          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - secret_id: "secret-name"
+    - get_serviceName-secret:
+        call: googleapis.secretmanager.v1.projects.secrets.versions.accessString
+        args: 
+          project_id: ${project_id} # or ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          secret_id: ${secret_id} # or "secret-name"
+        result: secretName
+
+######## Launch a Cloud Run service
+
+### GET call
+- serviceNameFunction1:
+    call: http.get
+    args:
+        url: https://service-name-<random-hash>.run.app
+        auth:
+            type: OIDC
+    result: serviceNameResult
+    next: serviceNameFunction2 # Why do i have to execute this line
+
+### POST call
+- serviceNameFunction:
+    call: http.post
+    args:
+        url: https://service-name-<random-hash>.run.app
+        auth:
+            type: OIDC
+        body:
+            input: ${parameter.body} # From a previous step
+    result: serviceNameResult
+
+######## Connect two Cloud Functions #########
+
+- randomgenFunction:
+    call: http.get
+    args:
+        url: https://<region>-<project-id>.cloudfunctions.net/randomgen
+    result: randomgenResult
+- multiplyFunction:
+    call: http.post
+    args:
+        url: https://<region>-<project-id>.cloudfunctions.net/multiply
+        body:
+            input: ${randomgenResult.body.random}
+    result: multiplyResult
+- returnResult:
+    return: ${multiplyResult}
+
+##################
+main:
+  params: [inputData]
+  steps:
+    # GET API KEY DATAFORM
+    - init:
+        assign:
+          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - secret_id: "api-key-dataform-workday"
+    - access_string_secret:
+        call: googleapis.secretmanager.v1.projects.secrets.versions.accessString
+        args:
+          secret_id: ${secret_id} 
+          project_id: ${project_id}
+        result: api_key_dataform_workday
+    # LAUNCH 9 CLOUD RUNS
+    - api-request-workday-altas:
+        call: http.get
+        args:
+          url: https://api-request-workday-cmlokebvua-ew.a.run.app/altas
+          auth:
+            type: OIDC
+        next: api-request-workday-bajas
+    - api-request-workday-bajas:
+        call: http.get
+        args:
+          url: https://api-request-workday-cmlokebvua-ew.a.run.app/bajas
+          auth:
+            type: OIDC
+        next: api-request-workday-calificaciones-potencial
+    - api-request-workday-calificaciones-potencial:
+        call: http.get
+        args:
+          url: https://api-request-workday-cmlokebvua-ew.a.run.app/califpot
+          auth:
+            type: OIDC
+        next: api-request-workday-costes
+    - api-request-workday-costes:
+        call: http.get
+        args:
+          url: https://api-request-workday-cmlokebvua-ew.a.run.app/costes
+          auth:
+            type: OIDC
+        next: api-request-workday-cursos-digitales
+    - api-request-workday-cursos-digitales:
+        call: http.get
+        args:
+          url: https://api-request-workday-cmlokebvua-ew.a.run.app/cursosdig
+          auth:
+            type: OIDC
+        next: api-request-workday-cursos-mixtos
+    - api-request-workday-cursos-mixtos:
+        call: http.get
+        args:
+          url: https://api-request-workday-cmlokebvua-ew.a.run.app/cursosmix
+          auth:
+            type: OIDC
+        next: api-request-workday-plantilla
+    - api-request-workday-plantilla:
+        call: http.get
+        args:
+          url: https://api-request-workday-cmlokebvua-ew.a.run.app/plantilla
+          auth:
+            type: OIDC
+        next: api-request-workday-promociones
+    - api-request-workday-promociones:
+        call: http.get
+        args:
+          url: https://api-request-workday-cmlokebvua-ew.a.run.app/promociones
+          auth:
+            type: OIDC
+        next: api-request-workday-recruiting
+    - api-request-workday-recruiting:
+        call: http.get
+        args:
+          url: https://api-request-workday-cmlokebvua-ew.a.run.app/recruiting
+          auth:
+            type: OIDC
+        next: urlParser
+    # TRANSFORM DATAFORM
+    - urlParser:
+        assign:
+          - UrlCall: ${ "https://api.dataform.co/v1/project/" + inputData.projectId + "/run"}
+        next: dataformRunCall
+    - dataformRunCall:
+        try:
+          call: http.post
+          args:
+            url: ${UrlCall}
+            headers:
+              Authorization: ${api_key_dataform_workday}
+          result: execId
+        retry:
+          predicate: ${custom_predicate}
+          max_retries: 5
+          backoff:
+            initial_delay: 20
+            max_delay: 60
+            multiplier: 2
+        next: urlChecker
+    - urlChecker:
+        assign:
+          - UrlCheck: ${ "https://api.dataform.co/v1/project/"+ inputData.projectId +"/run/" + execId.body.id}
+        next: dataformExecStatusCheck
+    - dataformExecStatusCheck:
+        call: http.get
+        args:
+          url: ${UrlCheck}
+          headers:
+            Authorization: ${api_key_dataform_workday}
+        result: currentStatus
+        next: conditionalSwitch
+    - conditionalSwitch:
+        switch:
+          - condition: ${currentStatus.body.status == "RUNNING"}
+            next: dataformExecStatusCheck
+          - condition: ${currentStatus.body.status == "SUCCESSFUL"}
+            next: dataCatalogCall
+        next: dataformError
+    - dataformError:
+        return: ${currentStatus.body.runLogUrl}
+    - dataCatalogCall:
+        return: ${currentStatus}
+
+# CUSTOM PREDICATE SUBWORRKFLOW
+custom_predicate:
+  params: [e]
+  steps:
+    - what_to_repeat:
+        switch:
+          - condition: ${e.code == 400}
+            return: True
+          - condition: ${e.code == 409}
+            return: True
+    - otherwise:
+        return: False
